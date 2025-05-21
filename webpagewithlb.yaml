@@ -1,0 +1,245 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create VPC with public and private subnets in ap-south-1, launch two EC2 instances, and set up a load balancer
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: MyVPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: MyIGW
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: ap-south-1a
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: PublicSubnet-1a
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: ap-south-1b
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: PublicSubnet-1b
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: ap-south-1a
+      Tags:
+        - Key: Name
+          Value: PrivateSubnet
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: PrivateRouteTable
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref PrivateRouteTable
+
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP and SSH access
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: WebServerSG
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP access for Load Balancer
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: LoadBalancerSG
+
+  WebServerInstance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0af9569868786b23a  # Amazon Linux 2 in ap-south-1
+      SubnetId: !Ref PublicSubnet1
+      SecurityGroupIds:
+        - !Ref WebServerSecurityGroup
+      UserData: 
+        Fn::Base64: |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          echo "<html><body><h1>Welcome to Web Server 1!</h1></body></html>" > /var/www/html/index.html
+
+  WebServerInstance2:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0af9569868786b23a  # Amazon Linux 2 in ap-south-1
+      SubnetId: !Ref PublicSubnet2
+      SecurityGroupIds:
+        - !Ref WebServerSecurityGroup
+      UserData: 
+        Fn::Base64: |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          echo "<html><body><h1>Welcome to Web Server 2!</h1></body></html>" > /var/www/html/index.html
+
+  WebTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: WebServersTargetGroup
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetType: instance
+      Targets:
+        - Id: !Ref WebServerInstance1
+          Port: 80
+        - Id: !Ref WebServerInstance2
+          Port: 80
+
+  WebLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: WebServersLoadBalancer
+      Scheme: internet-facing
+      Type: application
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+  WebLoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref WebTargetGroup
+      LoadBalancerArn: !Ref WebLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+Outputs:
+  VPCId:
+    Description: The VPC ID
+    Value: !Ref VPC
+  PublicSubnet1Id:
+    Description: The ID of the public subnet in ap-south-1a
+    Value: !Ref PublicSubnet1
+  PublicSubnet2Id:
+    Description: The ID of the public subnet in ap-south-1b
+    Value: !Ref PublicSubnet2
+  PrivateSubnetId:
+    Description: The ID of the private subnet
+    Value: !Ref PrivateSubnet
+  PublicRouteTableId:
+    Description: The ID of the public route table
+    Value: !Ref PublicRouteTable
+  PrivateRouteTableId:
+    Description: The ID of the private route table
+    Value: !Ref PrivateRouteTable
+  WebServer1PublicIP:
+    Description: Public IP address of web server 1
+    Value: !GetAtt WebServerInstance1.PublicIp
+  WebServer2PublicIP:
+    Description: Public IP address of web server 2
+    Value: !GetAtt WebServerInstance2.PublicIp
+  WebServer1URL:
+    Description: URL to access web server 1 directly
+    Value: !Sub "http://${WebServerInstance1.PublicIp}"
+  WebServer2URL:
+    Description: URL to access web server 2 directly
+    Value: !Sub "http://${WebServerInstance2.PublicIp}"
+  LoadBalancerDNS:
+    Description: DNS name of the load balancer
+    Value: !GetAtt WebLoadBalancer.DNSName
+  LoadBalancerURL:
+    Description: URL to access the application via load balancer
+    Value: !Sub "http://${WebLoadBalancer.DNSName}"
