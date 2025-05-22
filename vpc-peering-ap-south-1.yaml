@@ -1,0 +1,401 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Two VPCs in ap-south-1 with peering, public/private instances, and a simple webpage'
+
+Parameters:
+  KeyPairName:
+    Description: 'Name of an existing EC2 KeyPair in ap-south-1 for SSH access'
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    Default: 'my-ap-south-1-key'
+    ConstraintDescription: 'Must be the name of an existing EC2 KeyPair in ap-south-1.'
+
+Resources:
+  # First VPC in ap-south-1a
+  VPC1:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: '10.0.0.0/16'
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: VPC1-ap-south-1a
+
+  # Second VPC in ap-south-1b
+  VPC2:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: '10.1.0.0/16'
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: VPC2-ap-south-1b
+
+  # Internet Gateway for VPC1
+  InternetGateway1:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: IGW-VPC1
+
+  # Attach Internet Gateway to VPC1
+  AttachGateway1:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref VPC1
+      InternetGatewayId: !Ref InternetGateway1
+
+  # Internet Gateway for VPC2
+  InternetGateway2:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: IGW-VPC2
+
+  # Attach Internet Gateway to VPC2
+  AttachGateway2:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref VPC2
+      InternetGatewayId: !Ref InternetGateway2
+
+  # Subnets for VPC1 (ap-south-1a)
+  VPC1PublicSubnet:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC1
+      CidrBlock: '10.0.1.0/24'
+      AvailabilityZone: 'ap-south-1a'
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: VPC1-Public-Subnet-1a
+
+  VPC1PrivateSubnet:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC1
+      CidrBlock: '10.0.2.0/24'
+      AvailabilityZone: 'ap-south-1a'
+      Tags:
+        - Key: Name
+          Value: VPC1-Private-Subnet-1a
+
+  # Subnets for VPC2 (ap-south-1b)
+  VPC2PublicSubnet:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC2
+      CidrBlock: '10.1.1.0/24'
+      AvailabilityZone: 'ap-south-1b'
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: VPC2-Public-Subnet-1b
+
+  VPC2PrivateSubnet:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC2
+      CidrBlock: '10.1.2.0/24'
+      AvailabilityZone: 'ap-south-1b'
+      Tags:
+        - Key: Name
+          Value: VPC2-Private-Subnet-1b
+
+  # Route Tables for VPC1
+  VPC1PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC1
+      Tags:
+        - Key: Name
+          Value: VPC1-Public-RT
+
+  VPC1PrivateRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC1
+      Tags:
+        - Key: Name
+          Value: VPC1-Private-RT
+
+  # Route Tables for VPC2
+  VPC2PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC2
+      Tags:
+        - Key: Name
+          Value: VPC2-Public-RT
+
+  VPC2PrivateRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC2
+      Tags:
+        - Key: Name
+          Value: VPC2-Private-RT
+
+  # Public Route for VPC1 (Internet Gateway)
+  VPC1PublicRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: AttachGateway1
+    Properties:
+      RouteTableId: !Ref VPC1PublicRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway1
+
+  # Public Route for VPC2 (Internet Gateway)
+  VPC2PublicRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: AttachGateway2
+    Properties:
+      RouteTableId: !Ref VPC2PublicRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway2
+
+  # Associate Subnets with Route Tables in VPC1
+  VPC1PublicSubnetRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref VPC1PublicSubnet
+      RouteTableId: !Ref VPC1PublicRouteTable
+
+  VPC1PrivateSubnetRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref VPC1PrivateSubnet
+      RouteTableId: !Ref VPC1PrivateRouteTable
+
+  # Associate Subnets with Route Tables in VPC2
+  VPC2PublicSubnetRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref VPC2PublicSubnet
+      RouteTableId: !Ref VPC2PublicRouteTable
+
+  VPC2PrivateSubnetRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref VPC2PrivateSubnet
+      RouteTableId: !Ref VPC2PrivateRouteTable
+
+  # Security Groups for VPC1
+  VPC1PublicInstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'Enable HTTP and SSH access for VPC1'
+      VpcId: !Ref VPC1
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '0.0.0.0/0'
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: '0.0.0.0/0'
+      Tags:
+        - Key: Name
+          Value: VPC1-Public-Instance-SG
+
+  VPC1PrivateInstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'Enable SSH from within VPC1'
+      VpcId: !Ref VPC1
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: '10.0.0.0/16'
+      Tags:
+        - Key: Name
+          Value: VPC1-Private-Instance-SG
+
+  # Security Groups for VPC2
+  VPC2PublicInstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'Enable HTTP and SSH access for VPC2'
+      VpcId: !Ref VPC2
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '0.0.0.0/0'
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: '0.0.0.0/0'
+      Tags:
+        - Key: Name
+          Value: VPC2-Public-Instance-SG
+
+  VPC2PrivateInstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'Enable SSH from within VPC2'
+      VpcId: !Ref VPC2
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: '10.1.0.0/16'
+      Tags:
+        - Key: Name
+          Value: VPC2-Private-Instance-SG
+
+  # Public EC2 Instance in VPC1
+  VPC1PublicInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0af9569868786b23a
+      KeyName: !Ref KeyPairName
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet:
+            - !Ref VPC1PublicInstanceSecurityGroup
+          SubnetId: !Ref VPC1PublicSubnet
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          echo "<html><body><h1>Hello from VPC1 Public Instance in ap-south-1a!</h1></body></html>" > /var/www/html/index.html
+      Tags:
+        - Key: Name
+          Value: VPC1-Public-Instance
+
+  # Private EC2 Instance in VPC1
+  VPC1PrivateInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0af9569868786b23a
+      KeyName: !Ref KeyPairName
+      NetworkInterfaces:
+        - DeviceIndex: 0
+          GroupSet:
+            - !Ref VPC1PrivateInstanceSecurityGroup
+          SubnetId: !Ref VPC1PrivateSubnet
+      Tags:
+        - Key: Name
+          Value: VPC1-Private-Instance
+
+  # Public EC2 Instance in VPC2
+  VPC2PublicInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0af9569868786b23a
+      KeyName: !Ref KeyPairName
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet:
+            - !Ref VPC2PublicInstanceSecurityGroup
+          SubnetId: !Ref VPC2PublicSubnet
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          echo "<html><body><h1>Hello from VPC2 Public Instance in ap-south-1b!</h1></body></html>" > /var/www/html/index.html
+      Tags:
+        - Key: Name
+          Value: VPC2-Public-Instance
+
+  # Private EC2 Instance in VPC2
+  VPC2PrivateInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0f5ee92e2d63afc18
+      KeyName: !Ref KeyPairName
+      NetworkInterfaces:
+        - DeviceIndex: 0
+          GroupSet:
+            - !Ref VPC2PrivateInstanceSecurityGroup
+          SubnetId: !Ref VPC2PrivateSubnet
+      Tags:
+        - Key: Name
+          Value: VPC2-Private-Instance
+
+  # VPC Peering Connection (created after instances)
+  VPCPeeringConnection:
+    Type: 'AWS::EC2::VPCPeeringConnection'
+    DependsOn: 
+      - VPC1PrivateInstance
+      - VPC2PrivateInstance
+    Properties:
+      VpcId: !Ref VPC1
+      PeerVpcId: !Ref VPC2
+      Tags:
+        - Key: Name
+          Value: VPC1-to-VPC2-Peering
+
+  # Add routes for peering in VPC1
+  VPC1PeeringRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: VPCPeeringConnection
+    Properties:
+      RouteTableId: !Ref VPC1PrivateRouteTable
+      DestinationCidrBlock: '10.1.0.0/16'
+      VpcPeeringConnectionId: !Ref VPCPeeringConnection
+
+  # Add routes for peering in VPC2
+  VPC2PeeringRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: VPCPeeringConnection
+    Properties:
+      RouteTableId: !Ref VPC2PrivateRouteTable
+      DestinationCidrBlock: '10.0.0.0/16'
+      VpcPeeringConnectionId: !Ref VPCPeeringConnection
+
+  # Update security groups to allow peering traffic
+  VPC1PrivateSGUpdate:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: VPCPeeringConnection
+    Properties:
+      GroupId: !Ref VPC1PrivateInstanceSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      CidrIp: '10.1.0.0/16'
+
+  VPC2PrivateSGUpdate:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: VPCPeeringConnection
+    Properties:
+      GroupId: !Ref VPC2PrivateInstanceSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      CidrIp: '10.0.0.0/16'
+
+Outputs:
+  VPC1PublicInstanceIP:
+    Description: 'Public IP of the VPC1 Public Instance'
+    Value: !GetAtt VPC1PublicInstance.PublicIp
+  VPC2PublicInstanceIP:
+    Description: 'Public IP of the VPC2 Public Instance'
+    Value: !GetAtt VPC2PublicInstance.PublicIp
+  VPC1PrivateInstanceID:
+    Description: 'Instance ID of the VPC1 Private Instance'
+    Value: !Ref VPC1PrivateInstance
+  VPC2PrivateInstanceID:
+    Description: 'Instance ID of the VPC2 Private Instance'
+    Value: !Ref VPC2PrivateInstance
+  VPCPeeringConnectionId:
+    Description: 'ID of the VPC Peering Connection'
+    Value: !Ref VPCPeeringConnection
